@@ -1,0 +1,16 @@
+{
+	"required": true,
+	"package": "name.dunderbotdlc.mixin.client",
+	"compatibilityLevel": "JAVA_17",
+	"client": [
+		"BaritoneAPIMixin",
+		"EqMixin",
+		"LookBehaviorMixin",
+		"PathingBehaviorMixin",
+		"PathExecutorMixin",
+		"PlayerMovementInputMixin"
+	],
+	"injectors": {
+		"defaultRequire": 1
+	}
+}
