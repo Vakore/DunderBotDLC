@@ -4,95 +4,135 @@ import java.util.ArrayList;
 
 import baritone.api.utils.input.Input;
 import net.minecraft.client.world.ClientWorld;
+import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.particle.ParticleTypes;
 import net.minecraft.util.math.Vec3d;
+
+import static name.dunderbotdlc.DunderBotdlcClient.client;
+
+/*
+8 - 11 falling = too far, try delaying jump slightly
+
+0 - 1 ascending = too close, try slowing down for a tick or two on current jump,
+                  or do so on the previous jump
+ */
+
+/*
+function tryJump() {
+  bool delayJump = 0;//Positive if delay needs to occur
+  //Simulate the jump1
+  bestPos = jump1Pos
+  if (collide && falling) {
+    delayJump = find ticks;
+  }
+
+  if (delayJump) {
+    //Simulate jump1 with delay ticks. If it's better, use it.
+    bestPos = jump1Pos
+  }
+
+  //Simulate the next jump
+  if (!delayJump && nextJumpBad) {
+    delayJump = find ticks;
+    if (delayJump) {
+      //simulate jump1 with delay ticks
+    }
+    //simulate jump2
+  }
+}
+ */
 
 public class SimpleSim {
     //physics
-  /*public double physicsStepHeight = 0.6;
-  
-  public double physicsgravity = 0.08; // blocks/tick^2 https://minecraft.gamepedia.com/Entity#Motion_of_entities
-  public double physicsairdrag=  0.98; // actually (1 - drag)
-  public double physicsyawSpeed = 3.0;
-  public double physicspitchSpeed= 3.0;
-  public double physicsplayerSpeed= 0.1;
-  public double physicssprintSpeed= 0.3;
-  public double physicssneakSpeed= 0.3;
-  public double physicsstepHeight= 0.6; // how much height can the bot step on without jump
-  public double physicsnegligeableVelocity= 0.003; // actually 0.005 for 1.8, but seems fine
-  public double physicssoulsandSpeed= 0.4;
-  public double physicshoneyblockSpeed= 0.4;
-  public double physicshoneyblockJumpSpeed= 0.4;
-  public double physicsladderMaxSpeed= 0.15;
-  public double physicsladderClimbSpeed= 0.2;
-  public double physicsplayerHalfWidth= 0.3;
-  public double physicsplayerHeight= 1.8;
-  public double physicswaterInertia= 0.8;
-  public double physicslavaInertia= 0.5;
-  public double physicsliquidAcceleration= 0.02;
-  public double physicsairborneInertia= 0.91;
-  public double physicsairborneAcceleration= 0.02;
-  public double physicsdefaultSlipperiness= 0.6;
-  public double physicsoutOfLiquidImpulse= 0.3;
-  public double physicswaterGravity = 0.02;
-  public double physicslavaGravity = 0.02;
+    public static int simpleProblem(PlayerEntity player, int slowDown, int useDebug) {
+        ArrayList<Boolean> playerControlList = new ArrayList<Boolean>();
+        for (int i = 0; i < 8; i++) {playerControlList.add(i == 1 || i == 2 || i == 3);}
+        SimInstance myStateBase = new SimInstance(player.isOnGround(), playerControlList, client.player.getPos(), client.player.getVelocity(), (float) (Math.PI + (-client.player.getYaw() * Math.PI / 180.0)));
+        SimInstance myState = myStateBase.clone();
+        if (useDebug > 0) {
+            myState.x = 465.5f;
+            myState.y = 96;
+            myState.z = 2.5f;
+            myState.yaw = 3.14f;//(180.0f / (float)Math.PI);
+            myState.onGround = true;
+            myState.velX = 0.0;
+            myState.velY = 0.0;
+            myState.velZ = 0.0;
+        }
 
-    public Input leInput;
-    public float yaw;
-    public Vec3d pos;
-    public double x;
-    public double y;
-    public double z;
-    public double velX = 0.0;
-    public double velY = 0.0;
-    public double velZ = 0.0;
+        int firstTry = -99;
+        for (int i = 0; i < 30; i++) {
 
-    public double startY;
+            if (i < slowDown) {
+                myState.controlsprint = false;
+            } else {
+                myState.controlsprint = true;
+            }
 
-    //todo
-    public boolean isCollidedHorizontally = false;
-    public boolean isCollidedVertically = false;
-    public boolean isInWeb = false;
-    public double dolphinsGrace = 0.0;
-    public double depthStrider = 0.0;
-    public double levitation = 0.0;
+            if (i % 3 == 0) {
+                client.world.addParticle(ParticleTypes.FLAME,
+                        myState.x,
+                        myState.y,
+                        myState.z, 0.0, 0.0, 0.0);
+            }
+            myState.simulatePlayer();
+            if (myState.isCollidedHorizontally || myState.isCollidedVertically) {
+                if (myState.isCollidedHorizontally) {
+                    System.out.println("Time #1: Tick collided: " + i + ", velY: " + myState.velY);
+                    System.out.println((myState.velY > 0) ? "Scenario #1: Too close to block, slow down" : "Scenario #2: Too far from block, delay jump");
+                    if (myState.velY < 0) {
+                        firstTry = i - 4;
+                        if (firstTry < 0) {firstTry = 0;}
+                    } else {
+                        firstTry = -2;
+                    }
+                }
+                client.world.addParticle(ParticleTypes.SOUL_FIRE_FLAME,
+                            myState.x,
+                            myState.y,
+                            myState.z, 0.0, 0.0, 0.0);
+                i = 30;
+            }
+        }
+        if (firstTry != -99) {
+            return firstTry;
+        }
+        //return 0;
 
-    public boolean onGround = false;
-    public boolean isInWater = false;
-    public boolean isInLava = false;
-    public boolean controlsneak = false;
-    public boolean controlsprint = false;
-    public boolean controljump = false;
-    public boolean controlforward = false;
-    public boolean controlright = false;
-    public boolean controlleft = false;
-    public boolean controlback = false;
-    public int jumpTicks = 0;
-    public boolean jumpQueued = false;
-    public double jumpBoost = 0.0;
-    public boolean elytraFlying = false;
+        //SimInstance myState2 = myState.clone();
+        int redo = 0;
+        for (int i = 0; i < 30; i++) {
+            if (i % 3 == 0) {
+                client.world.addParticle(ParticleTypes.FLAME,
+                        myState.x,
+                        myState.y,
+                        myState.z, 0.0, 0.0, 0.0);
+            }
+            myState.simulatePlayer();
+            if (myState.isCollidedHorizontally || myState.isCollidedVertically) {
+                client.world.addParticle(ParticleTypes.SOUL_FIRE_FLAME,
+                        myState.x,
+                        myState.y,
+                        myState.z, 0.0, 0.0, 0.0);
+                if (myState.isCollidedHorizontally) {
+                    System.out.println("Time #2: Tick collided: " + i + ", velY: " + myState.velY);
+                    redo = i * ((int)Math.signum(myState.velY));
+                    redo += 5 * (int)Math.signum(myState.velY);
+                    System.out.println(" " + i + ", " + ((int)Math.signum(myState.velY)));
+                    System.out.println((myState.velY > 0) ? "Scenario #3: 2nd jump too close to block, delay jump" : "Scenario #4: 2nd jump too far from block... later problem lol");
+                }
+                i = 30;////tp @s 465 96 2.5 0 0
+            }
+        }
 
-
-    private ClientWorld world;
-    public ArrayList<Boolean> myControls;
-    public SimpleSim(boolean grounded, ArrayList<Boolean> leControls, Vec3d ps, Vec3d pv, float ya) {
-        this.yaw = ya;
-        pos = ps;
-        x = ps.x;
-        y = ps.y;
-        z = ps.z;
-        this.velX = pv.x;
-        this.velY = pv.y;
-        this.velZ = pv.z;
-        startY = y;
-        world = name.dunderbotdlc.DunderBotdlcClient.client.world;
-        this.onGround = grounded;
-        if (leControls.get(0) == true) {controlsneak = true;}
-        if (leControls.get(1) == true) {controljump = true;}
-        if (leControls.get(2) == true) {controlsprint = true;}
-        if (leControls.get(3) == true) {controlforward = true;}
-        if (leControls.get(4) == true) {controlback = true;}
-        if (leControls.get(5) == true) {controlleft = true;}
-        if (leControls.get(6) == true) {controlright = true;}
-        myControls = leControls;
-    }*/
+        if (redo > 0 && (Math.abs(myState.y - client.player.getPos().y) < 0.9f)) {
+            System.out.println("Second jump: too far away. Delaying jump...");
+            return redo;
+        } else if (redo < 0) {
+            //System.out.println("Second jump: too close, attempting to slow down.");
+            //simpleProblem(player, redo);
+            //return redo;
+        }
+        return 0;
+    }
 }

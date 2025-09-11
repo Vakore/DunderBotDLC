@@ -5,6 +5,11 @@
  * DONT ALLOW the bot taking control is baritone is
  * making the bot jump, or take baritone's control
  * over bot jumping away
+ *
+ * #set primaryTimeoutMS 1
+#set primaryTimeoutMS 500
+#settings planAheadPrimaryTimeoutMS 1
+#settings planAheadPrimaryTimeoutMS 4000
  */
 
 package name.dunderbotdlc;
@@ -12,13 +17,9 @@ package name.dunderbotdlc;
 //import name.dunderbotdlc.commands.;
 
 import com.mojang.brigadier.arguments.IntegerArgumentType;
+import name.dunderbotdlc.commands.*;
 import net.fabricmc.api.ClientModInitializer;
-import name.dunderbotdlc.commands.IBaritoneAPIMixin;
 //import name.dunderbotdlc.commands.AABB;
-import name.dunderbotdlc.commands.NewCommand;
-import name.dunderbotdlc.commands.SimInstance;
-import name.dunderbotdlc.commands.SmartWalk;
-import name.dunderbotdlc.commands.jumpSprintState;
 //import name.dunderbotdlc.mixin.client.BaritoneAPIMixin;
 //import name.dunderbotdlc.mixin.client.PathingBehaviorMixin;
 
@@ -72,6 +73,7 @@ import net.minecraft.particle.ParticleTypes;
 //import net.minecraft.util.math.BlockPos;
 import net.minecraft.screen.slot.SlotActionType;
 import net.minecraft.text.Text;
+import net.minecraft.util.Formatting;
 import net.minecraft.util.math.Vec3d;
 /*import net.minecraft.entity.projectile.ProjectileEntity;
 import net.minecraft.util.math.BlockPos;
@@ -162,7 +164,7 @@ public class DunderBotdlcClient implements ClientModInitializer {
                                     .executes(context -> {
                                         int slotFrom = IntegerArgumentType.getInteger(context, "slotFrom");
                                         int slotTo = IntegerArgumentType.getInteger(context, "slotTo");
-                                        moveItem(slotFrom, slotTo);
+                                        moveItem(slotFrom, slotTo);//36 = hotbar, 1-4 = crafting, 9 = inventory begin
                                         context.getSource().sendFeedback(Text.of("Moved item from slot " + slotFrom + " to slot " + slotTo));
                                         return 1;
                                     }))));
@@ -177,6 +179,22 @@ public class DunderBotdlcClient implements ClientModInitializer {
                                         context.getSource().sendFeedback(Text.of("Threw item from slot " + slot));
                                         return 1;
                                     })));
+        });
+
+        ClientCommandRegistrationCallback.EVENT.register((dispatcher, dedicated) -> {
+            dispatcher.register(ClientCommandManager.literal("scoreinventory")
+                    .then(ClientCommandManager.argument("table", IntegerArgumentType.integer(0, 10))
+                            .executes(context -> {
+                                int table = IntegerArgumentType.getInteger(context, "table");
+                                MinecraftClient client = MinecraftClient.getInstance();
+                                if (client.player != null) {
+                                    double score = InventoryScorer.scoreInventory(client.player.getInventory().main).totalScore;
+                                    context.getSource().sendFeedback(Text.of("Inventory score: " + (Math.round(score * 20.0f) / 20.0f)));
+                                    System.out.println("Score: " + score);
+                                }
+
+                                return 1;
+                            })));
         });
 	}
 
@@ -196,6 +214,19 @@ public class DunderBotdlcClient implements ClientModInitializer {
             // Then place the target slot's item back into the source slot
             client.interactionManager.clickSlot(client.player.currentScreenHandler.syncId, slotFrom, 0, SlotActionType.PICKUP, client.player);
         }
+    }
+
+    private void logInventory(PlayerEntity player) {
+        if (player == null) return;
+
+        System.out.println("=== Player Inventory ===");
+        player.getInventory().main.forEach(stack -> {
+            if (!stack.isEmpty()) {
+                System.out.println(stack.getCount() + "x " + stack.getName().getString());
+            }
+        });
+        System.out.println("========================");
+        System.out.println("Hello World!");
     }
 
     //@SuppressWarnings("rawtypes")
@@ -249,7 +280,17 @@ public class DunderBotdlcClient implements ClientModInitializer {
             if (client.options.dropKey.isPressed() && attackCooldown > 10) {
                 attackCooldown = 0;
                 isBotting = !isBotting;//
-                botMode = client.options.hotbarKeys[0].isPressed() ? 1 : 0;
+                botMode = 0;
+                if (client.options.hotbarKeys[0].isPressed()) {
+                    botMode = 1;
+                } else if (client.options.hotbarKeys[1].isPressed()) {
+                    botMode = 2;
+                } else if (client.options.hotbarKeys[2].isPressed()) {
+                    botMode = 3;
+                }  else if (client.options.hotbarKeys[8].isPressed()) {
+                    logInventory(client.player);
+                }
+
                 BaritoneAPI.getProvider().getPrimaryBaritone().getInputOverrideHandler().clearAllKeys();
                 ((IBaritoneAPIMixin) BaritoneAPI.getProvider()).setSoftPause(isBotting);
                 if (isBotting) {
@@ -368,7 +409,7 @@ public final void baritone.eq.setInputForceState(baritone.api.utils.input.Input,
                         botMode = 0;
                     }
                 }*/
-                System.out.println("DunderLC - isBotting is now set to " + isBotting);
+                System.out.println("DunderLC - isBotting is now set to " + isBotting + ", mode: " + botMode);
                 System.out.println(world.getBlockState(player.getBlockPos()));
                 c_W = false;
                 c_spr = false;
@@ -402,6 +443,10 @@ public final void baritone.eq.setInputForceState(baritone.api.utils.input.Input,
                     doPvE();
                 } else if (botMode == 1) {
                     doJumpsprint(0);
+                } else if (botMode == 2) {
+                    doAdjustTests();
+                } else if (botMode == 3) {
+                    doAdjustTests2();
                 }
 
 
@@ -427,7 +472,7 @@ public final void baritone.eq.setInputForceState(baritone.api.utils.input.Input,
                 if (c_spr) {
                     client.player.setSprinting(true);
                 } else {
-                    client.player.setSprinting(true);
+                    client.player.setSprinting(false);
                 }
 
                 if (c_W) {
@@ -582,14 +627,47 @@ public final void baritone.eq.setInputForceState(baritone.api.utils.input.Input,
         System.out.println("oh yeah");
         int bestPos = -1;
         try {
-            List<BetterBlockPos> bPos = BaritoneAPI.getProvider().getPrimaryBaritone().getPathingBehavior().getPath().get().positions();
+
+
+            //
+            List<BetterBlockPos> bPos = new ArrayList<BetterBlockPos>();
+            if (BaritoneAPI.getProvider().getPrimaryBaritone().getPathingBehavior() != null &&
+                    BaritoneAPI.getProvider().getPrimaryBaritone().getPathingBehavior().getPath() != null &&
+                    BaritoneAPI.getProvider().getPrimaryBaritone().getPathingBehavior().getPath().get() != null &&
+                    BaritoneAPI.getProvider().getPrimaryBaritone().getPathingBehavior().getPath().get().positions() != null &&
+                    BaritoneAPI.getProvider().getPrimaryBaritone().getPathingBehavior().getPath().get().positions().get(0) != null) {//was .getLast()
+                //bPos = BaritoneAPI.getProvider().getPrimaryBaritone().getPathingBehavior().getPath().get().positions();
+                bPos.clear();
+                bPos.addAll(BaritoneAPI.getProvider().getPrimaryBaritone().getPathingBehavior().getPath().get().positions());
+                IPathExecutor extraSegment = BaritoneAPI.getProvider().getPrimaryBaritone().getPathingBehavior().getNext();
+                if (    extraSegment != null &&
+                        extraSegment.getPath() != null &&
+                        extraSegment.getPath().positions() != null &&
+                        extraSegment.getPath().positions().get(0) != null) {
+                    bPos.addAll(extraSegment.getPath().positions());
+                }
+            }
+            //
+
+
+            //List<BetterBlockPos> bPos = BaritoneAPI.getProvider().getPrimaryBaritone().getPathingBehavior().getPath().get().positions();
             bestPos = Math.min(BaritoneAPI.getProvider().getPrimaryBaritone().getPathingBehavior().getCurrent().getPosition() - 1, 0);
+            if (bestPos < 0) {bestPos = 0;}
             for (int i = bestPos; i < bPos.size(); i++) {
                 if (player.getPos().distanceTo( new Vec3d(bPos.get(i).x, bPos.get(i).y, bPos.get(i).z)) <
                     player.getPos().distanceTo( new Vec3d(bPos.get(bestPos).x, bPos.get(bestPos).y, bPos.get(bestPos).z))) {
                     bestPos = i;
                 }
+                //particle
+                world.addParticle(ParticleTypes.FLAME,
+                        bPos.get(i).x+0.5,
+                        bPos.get(i).y,
+                        bPos.get(i).z+0.5, 0.0, 0.0, 0.0);
             }
+            world.addParticle(ParticleTypes.HEART,
+                    bPos.get(bestPos).x+0.5,
+                    bPos.get(bestPos).y+0.25,
+                    bPos.get(bestPos).z+0.5, 0.0, 0.0, 0.0);
             bestPathNum = bestPos - BaritoneAPI.getProvider().getPrimaryBaritone().getPathingBehavior().getCurrent().getPosition() + 1;
 
             //BaritoneAPI.getProvider().getPrimaryBaritone
@@ -1015,7 +1093,18 @@ public jumpSprintState simulateAction(int depth, int index, int action, Vec3d ta
         BaritoneAPI.getProvider().getPrimaryBaritone().getPathingBehavior().getPath().get() != null &&
         BaritoneAPI.getProvider().getPrimaryBaritone().getPathingBehavior().getPath().get().positions() != null &&
         BaritoneAPI.getProvider().getPrimaryBaritone().getPathingBehavior().getPath().get().positions().get(0) != null) {//was .getLast()
-            bPos = BaritoneAPI.getProvider().getPrimaryBaritone().getPathingBehavior().getPath().get().positions();
+          //bPos = BaritoneAPI.getProvider().getPrimaryBaritone().getPathingBehavior().getPath().get().positions();
+          bPos.clear();
+          bPos.addAll(BaritoneAPI.getProvider().getPrimaryBaritone().getPathingBehavior().getPath().get().positions());
+          IPathExecutor extraSegment = BaritoneAPI.getProvider().getPrimaryBaritone().getPathingBehavior().getNext();
+          if (extraSegment != null &&
+              extraSegment.getPath() != null &&
+              extraSegment.getPath().positions() != null &&
+              extraSegment.getPath().positions().get(0) != null) {
+              bPos.addAll(extraSegment.getPath().positions());
+          }
+
+
             /*BaritoneAPI.getProvider().getPrimaryBaritone().getPathingBehavior().getCurrent().getClass().getDeclaredField("pathPosition").setAccessible(true);
             BaritoneAPI.getProvider().getPrimaryBaritone().getPathingBehavior().getCurrent().getClass().getDeclaredField("pathPosition").set(
                 BaritoneAPI.getProvider().getPrimaryBaritone().getPathingBehavior().getCurrent(),
@@ -1044,24 +1133,24 @@ public jumpSprintState simulateAction(int depth, int index, int action, Vec3d ta
         myState.simulatePlayer();
         myScore += 0.05;
         if (myState.controlforward && myState.controljump && myState.controlsprint) {
-            System.out.println("(!!!)Doing thingies: " + i);
+            //System.out.println("(!!!)Doing thingies: " + i);
         }
         if (i < 31 && ((myState.onGround && (i > 3 || action == 1)) && (action == 0 || action == 1 && i >= 2) || myState.isInWater || myState.isInLava || (i >= 2 && myState.isInWeb))) {
             //console.log(i);
             i = 30;
-            System.out.println("(!!!)Doing thingies2: " + dist3d(myState.x, 0, myState.z, stateBase.x, 0, stateBase.z));
+            //System.out.println("(!!!)Doing thingies2: " + dist3d(myState.x, 0, myState.z, stateBase.x, 0, stateBase.z));
         }
             if (depth == 1 && i % 3 == 0) {
                 world.addParticle(ParticleTypes.FLAME,
                                       myState.x,
                                       myState.y,
                                       myState.z, 0.0, 0.0, 0.0);
-            } /*else if (depth == 0 && i % 10 == 0) {
+            } else if (depth == 0 && i % 10 == 0) {
                 world.addParticle(ParticleTypes.SOUL_FIRE_FLAME,
                                       myState.x,
                                       myState.y,
                                       myState.z, 0.0, 0.0, 0.0);
-            }*/
+            }
         //console.log(JSON.stringify(myState));
         //if (myState.isCollidedHorizontally) {myScore += 0.25;}
     }
@@ -1127,6 +1216,7 @@ public jumpSprintState simulateAction(int depth, int index, int action, Vec3d ta
         int bestPos2 = -1;
         try {
             bestPos2 = Math.min(BaritoneAPI.getProvider().getPrimaryBaritone().getPathingBehavior().getCurrent().getPosition() - 1, 0);
+            if (bestPos2 < 0) {bestPos2 = 0;}
             for (int i = bestPos2; i < bPos.size(); i++) {
                 if (new Vec3d(myState.x, myState.y, myState.z).distanceTo( new Vec3d(bPos.get(i).x, bPos.get(i).y, bPos.get(i).z)) <
                 new Vec3d(myState.x, myState.y, myState.z).distanceTo( new Vec3d(bPos.get(bestPos2).x, bPos.get(bestPos2).y, bPos.get(bestPos2).z))) {
@@ -1190,7 +1280,7 @@ public jumpSprintState simulateAction(int depth, int index, int action, Vec3d ta
         }
     }
 
-    System.out.println("score " + myScore);
+    //System.out.println("score " + myScore);
     if (myState.onGround && !myState.isInLava) {
         return new jumpSprintState(myState, true, myState.controljump, myScore);//{state:myState,parent:theParent,open:true, shouldJump:true, score:myScore};
     } else {
@@ -1261,4 +1351,28 @@ public jumpSprintState simulateAction(int depth, int index, int action, Vec3d ta
         }
       }
     }*/
+
+    int slowDownTicks = 0;
+    int slowDownType = 1;
+    private void doAdjustTests2() {
+        slowDownTicks = SimpleSim.simpleProblem(player, 0, 1);
+    }
+    private void doAdjustTests() {
+        slowDownTicks--;
+        if (player.isOnGround() && slowDownTicks <= 0) {
+            slowDownTicks = SimpleSim.simpleProblem(player, 0, 0);
+            System.out.println("Slow down ticks: " + slowDownTicks);
+            slowDownType = 0;
+            if (slowDownTicks < 0) {
+                System.out.println("slowDownTicks: " + slowDownTicks);
+                slowDownTicks = -slowDownTicks;
+                //slowDownTicks -= 7;
+                slowDownType = 1;
+                System.out.println("slowing down...");
+            }
+        }
+        c_W = true;
+        c_spr = (slowDownTicks <= 0 || slowDownType == 0);
+        c_j = (player.getVelocity().y <= 0 && (slowDownTicks <= 0 || slowDownType == 1));
+    }
 }

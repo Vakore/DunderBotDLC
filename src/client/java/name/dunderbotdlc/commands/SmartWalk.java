@@ -20,6 +20,7 @@ Next steps:
 2. Determine if a jump will descend a player, descend during raycast too
     -Basics - done
     -colliding on descent - not done(headhitters)
+    -Proper descent on raycast - not done
 
 3. Handle headhitters(jump sprinting in 2-block tall spaces should
   be considered "less complicated" than flat terrian)

@@ -3,9 +3,9 @@
 	"id": "dunderbotdlc",
 	"version": "${version}",
 	"name": "DunderBotdlc",
-	"description": "This is an example description! Tell everyone what your mod is about!",
+	"description": "This is a mod to improve baritone.",
 	"authors": [
-		"Me!"
+		"Vakore"
 	],
 	"contact": {
 		"homepage": "https://fabricmc.net/",

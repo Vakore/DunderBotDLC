@@ -5,9 +5,7 @@ import java.util.List;
 
 import baritone.bb;
 import baritone.api.utils.input.Input;
-import net.minecraft.block.Block;
-import net.minecraft.block.BlockState;
-import net.minecraft.block.Waterloggable;
+import net.minecraft.block.*;
 import net.minecraft.client.world.ClientWorld;
 import net.minecraft.state.property.Properties;
 import net.minecraft.util.math.BlockPos;
@@ -350,7 +348,7 @@ public class SimInstance {
               //const block = world.getBlock(cursor);
               BlockPos blockPos = new BlockPos((int)Math.floor(cursor.x), (int)Math.floor(cursor.y), (int)Math.floor(cursor.z));
               BlockState blockState = world.getBlockState(blockPos);
-              //if (blockState != null) {
+              if (blockState != null) {
                 //if (supportFeature('velocityBlocksOnCollision')) {
                   /*if (block.type === soulsandId) {
                     vel.x *= physics.soulsandSpeed
@@ -360,19 +358,35 @@ public class SimInstance {
                     vel.z *= physics.honeyblockSpeed
                   }*/
                 //}
-                /*if (block.type === webId) {
-                  entity.isInWeb = true
-                } else if (block.type === bubblecolumnId) {
-                  const down = !block.metadata
-                  const aboveBlock = world.getBlock(cursor.offset(0, 1, 0))
-                  const bubbleDrag = (aboveBlock && aboveBlock.type === 0) ? physics.bubbleColumnSurfaceDrag : physics.bubbleColumnDrag
+                if (blockState.getBlock() == Blocks.COBWEB) {
+                  this.isInWeb = true;
+                } else if (blockState.getBlock() == Blocks.BUBBLE_COLUMN) {
+                  boolean down = blockState.get(BubbleColumnBlock.DRAG);
+                  BlockState aboveBlock = world.getBlockState(
+                          new BlockPos((int)Math.floor(cursor.x), (int)Math.floor(cursor.y + 1), (int)Math.floor(cursor.z))
+                  );
+                  /*
+    bubbleColumnSurfaceDrag: {
+      down: 0.03,
+      maxDown: -0.9,
+      up: 0.1,
+      maxUp: 1.8
+    },
+        bubbleColumnDrag: {
+      down: 0.03,
+      maxDown: -0.3,
+      up: 0.06,
+      maxUp: 0.7
+    },
+                   */
+                  boolean bubbleDragIsSurface = (aboveBlock != null && aboveBlock.getBlock() == Blocks.AIR);
                   if (down) {
-                    vel.y = Math.max(bubbleDrag.maxDown, vel.y - bubbleDrag.down)
+                    this.velY = Math.max(bubbleDragIsSurface ? -0.9 : -0.3, this.velY - 0.03);
                   } else {
-                    vel.y = Math.min(bubbleDrag.maxUp, vel.y + bubbleDrag.up)
+                      this.velY = Math.min(bubbleDragIsSurface ? 1.8 : 0.7, this.velY + (bubbleDragIsSurface ? 0.1 : 0.06));
                   }
                 }
-              }*/
+              }
             }
           }
         }
