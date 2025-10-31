@@ -95,13 +95,13 @@ public class SimInstance {
         startY = y;
         world = name.dunderbotdlc.DunderBotdlcClient.client.world;
         this.onGround = grounded;
-        if (leControls[0] == true) {controlsneak = true;}
-        if (leControls[1] == true) {controljump = true;}
-        if (leControls[2] == true) {controlsprint = true;}
-        if (leControls[3] == true) {controlforward = true;}
-        if (leControls[4] == true) {controlback = true;}
-        if (leControls[5] == true) {controlleft = true;}
-        if (leControls[6] == true) {controlright = true;}
+        controlsneak = leControls[0];
+        controljump = leControls[1];
+        controlsprint = leControls[2];
+        controlforward = leControls[3];
+        controlback = leControls[4];
+        controlleft = leControls[5];
+        controlright = leControls[6];
         myControls = leControls;
     }
 
@@ -116,6 +116,7 @@ public class SimInstance {
 
     public ArrayList<AABB> getSurroundingBBs(AABB queryBB) {
         ArrayList<AABB> surroundingBBs = new ArrayList<AABB>();
+        //return surroundingBBs; //profiling
         vec3e cursor = new vec3e(0.0, 0.0, 0.0);
         for (cursor.y = Math.floor(queryBB.minY) - 2; cursor.y <= Math.floor(queryBB.maxY) + 1; cursor.y++) {
             for (cursor.z = Math.floor(queryBB.minZ) - 1; cursor.z <= Math.floor(queryBB.maxZ) + 1; cursor.z++) {
@@ -138,6 +139,7 @@ public class SimInstance {
 
     public ArrayList<AABB> getWaterInBB(AABB queryBB) {
         ArrayList<AABB> waterBBs = new ArrayList<AABB>();
+        //return waterBBs; //profiling
         vec3e cursor = new vec3e(0.0, 0.0, 0.0);
         for (cursor.y = Math.floor(queryBB.minY) - 1; cursor.y <= Math.floor(queryBB.maxY); cursor.y++) {
             for (cursor.z = Math.floor(queryBB.minZ); cursor.z <= Math.floor(queryBB.maxZ); cursor.z++) {
@@ -467,6 +469,7 @@ public class SimInstance {
     }
 
     public void simulatePlayer() {
+        //if (this.controljump) return; //profiling
         AABB waterBB = getPlayerBB(new Vec3d(this.x, this.y, this.z)).contract(0.001, 0.401, 0.001);
         AABB lavaBB = getPlayerBB(new Vec3d(this.x, this.y, this.z)).contract(0.1, 0.4, 0.1);
 

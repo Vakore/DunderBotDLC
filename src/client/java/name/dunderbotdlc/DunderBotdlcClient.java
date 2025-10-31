@@ -17,11 +17,13 @@ package name.dunderbotdlc;
 //import name.dunderbotdlc.commands.;
 
 import com.mojang.brigadier.arguments.IntegerArgumentType;
+import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 import name.dunderbotdlc.commands.*;
 import name.dunderbotdlc.inventorymanagement.InventoryScorer;
 import name.dunderbotdlc.physics.SimInstance;
 import name.dunderbotdlc.physics.SimpleSim;
 import name.dunderbotdlc.physics.SmartWalk;
+import name.dunderbotdlc.structs.AABB;
 import name.dunderbotdlc.structs.jumpSprintState;
 import net.fabricmc.api.ClientModInitializer;
 //import name.dunderbotdlc.structs.AABB;
@@ -59,6 +61,10 @@ import baritone.api.utils.input.Input;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandManager;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
+import net.minecraft.block.BlockState;
+import net.minecraft.block.Blocks;
+import net.minecraft.block.BubbleColumnBlock;
+import net.minecraft.block.Waterloggable;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.client.world.ClientWorld;
@@ -74,10 +80,15 @@ import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.entity.projectile.ArrowEntity;
 import net.minecraft.entity.projectile.FireballEntity;
 //import net.minecraft.util.math.BlockPos;
+import net.minecraft.fluid.FluidState;
+import net.minecraft.fluid.Fluids;
 import net.minecraft.particle.ParticleTypes;
 //import net.minecraft.util.math.BlockPos;
 import net.minecraft.screen.slot.SlotActionType;
+import net.minecraft.state.property.Properties;
 import net.minecraft.text.Text;
+import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.Box;
 import net.minecraft.util.math.Vec3d;
 /*import net.minecraft.entity.projectile.ProjectileEntity;
 import net.minecraft.util.math.BlockPos;
@@ -85,6 +96,7 @@ import net.minecraft.util.math.Box;
 import net.minecraft.util.shape.VoxelShape;
 import net.minecraft.util.shape.VoxelShapes;*/
 import net.minecraft.client.option.KeyBinding;
+import net.minecraft.util.shape.VoxelShape;
 //import name.dunderbotdlc.commands.Prediction;
 //import net.minecraft.client.util.InputUtil;
 //import name.dunderbotdlc.mixin.client.IBaritoneAPI;
@@ -98,7 +110,7 @@ public class DunderBotdlcClient implements ClientModInitializer {
     public IBaritone bbaritone;
     //private PathingCommand pauseCommand;
     public int attackCooldown = 0;
-    public ClientWorld world;
+    public static ClientWorld world;
     public Entity target;
     public int targetID;
     public double threatLevel;
@@ -132,6 +144,57 @@ public class DunderBotdlcClient implements ClientModInitializer {
     public int noJumpAttempts = 0;
 	//private Rotation rotation;
     public PrintStream myStream;
+
+
+    //
+    // inside DunderBotdlcClient
+    public final BlockCache blockCache = new BlockCache();
+    public static int currentMove = 0;
+    public static List<BetterBlockPos> bPos = new ArrayList<BetterBlockPos>();
+
+    public static final class BlockCache {
+        // key = ((x & 0xFFF)<<20) | ((z & 0xFFF)<<8) | (y & 0xFF)
+        private final Long2ObjectOpenHashMap<CachedBlock> map = new Long2ObjectOpenHashMap<>();
+
+        void clear()        { map.clear(); }
+        CachedBlock get(int x, int y, int z) {
+            long key = ((long)(x & 0xFFF) << 20) | ((long)(z & 0xFFF) << 8) | (y & 0xFF);
+            return map.computeIfAbsent(key, k -> new CachedBlock(x, y, z));
+        }
+    }
+    public static final class CachedBlock {
+        final AABB[] colliders;   // null if empty
+        AABB waterBB;       // null if not water
+        final boolean isWeb, isBubbleDrag;
+        CachedBlock(int bx, int by, int bz) {
+            BlockState bs = world.getBlockState(new BlockPos(bx, by, bz));
+            // ---- collision ----
+            VoxelShape vs = bs.getCollisionShape(world, new BlockPos(bx, by, bz));
+            List<Box> boxes = vs.getBoundingBoxes();
+            if (boxes.isEmpty()) {
+                colliders = null;
+            } else {
+                colliders = new AABB[boxes.size()];
+                for (int i = 0; i < boxes.size(); i++) {
+                    Box b = boxes.get(i);
+                    colliders[i] = new AABB(bx + b.minX, by + b.minY, bz + b.minZ,
+                            bx + b.maxX, by + b.maxY, bz + b.maxZ);
+                }
+            }
+            // ---- water ----
+            FluidState fs = bs.getFluidState();
+            boolean water = fs.isStill() || fs.isOf(Fluids.WATER) ||
+                    (bs.getBlock() instanceof Waterloggable && bs.get(Properties.WATERLOGGED));
+            if (water) {
+                double h = fs.getHeight(world, new BlockPos(bx, by, bz));
+                double top = by + 1 - h;
+                waterBB = new AABB(bx, by, bz, bx + 1, top, bz + 1);
+            } else waterBB = null;
+            isWeb = bs.isOf(Blocks.COBWEB);
+            isBubbleDrag = bs.isOf(Blocks.BUBBLE_COLUMN) && bs.get(BubbleColumnBlock.DRAG);
+        }
+    }
+    //
 
 	@Override
 	public void onInitializeClient() {
@@ -235,6 +298,7 @@ public class DunderBotdlcClient implements ClientModInitializer {
 
     //@SuppressWarnings("rawtypes")
 	private void onClientTick() {
+        blockCache.clear();
         
         if (isBotting && client.options.togglePerspectiveKey.isPressed()) {
             //((IBaritoneAPIMixin) BaritoneAPI.getProvider()).setSoftPause(false);
@@ -297,115 +361,9 @@ public class DunderBotdlcClient implements ClientModInitializer {
 
                 BaritoneAPI.getProvider().getPrimaryBaritone().getInputOverrideHandler().clearAllKeys();
                 ((IBaritoneAPIMixin) BaritoneAPI.getProvider()).setSoftPause(isBotting);
-                if (isBotting) {
-                    
-                    /*Class thisClass = net.minecraft.client.gui.screen.Screen.class;//BaritoneAPI.getProvider().getPrimaryBaritone().getInputOverrideHandler().getClass();
-                    System.out.println(thisClass.getSimpleName());
-                    Method[] methods = thisClass.getDeclaredMethods();
-
-                    for (int i = 0; i < methods.length; i++) {
-                        System.out.println(methods[i].toString());
-                    }
-/*
- * 
- */
-
-/* IPathingControlManager - actuall the IpathingControlmanager
- * et
-final boolean baritone.et.a(baritone.api.pathing.goals.Goal)
-public final baritone.api.process.PathingCommand baritone.et.a()
-public final void baritone.et.a()
-public final java.util.Optional baritone.et.mostRecentInControl()
-public final void baritone.et.registerProcess(baritone.api.process.IBaritoneProcess)
-public final java.util.Optional baritone.et.mostRecentCommand()
- */
-
-/*
-IPathExecutor
-dg
-public final int baritone.dg.getPosition()
-public final boolean baritone.dg.b()
-private void baritone.dg.b()
-private void baritone.dg.c()
-private baritone.dg baritone.dg.a()
-private baritone.dg baritone.dg.a(baritone.dg,baritone.dh)
-public final baritone.dg baritone.dg.a(baritone.dg)
-public final boolean baritone.dg.a()
-private boolean baritone.dg.a(net.minecraft.util.Pair,double)
-private net.minecraft.util.Pair baritone.dg.a(baritone.da)
-public final void baritone.dg.a()
-private static boolean baritone.dg.a(baritone.api.utils.IPlayerContext,baritone.api.pathing.movement.IMovement,baritone.api.pathing.movement.IMovement) 
-private static boolean baritone.dg.a(baritone.api.utils.IPlayerContext,baritone.dd,baritone.cw,baritone.api.pathing.movement.IMovement)
-public final baritone.api.pathing.calc.IPath baritone.dg.getPath()
-*/
-
-
-/*  IPathingBehavior
- * h
-private boolean baritone.h.b()
-private void baritone.h.b()
-private void baritone.h.c()
-public final baritone.api.utils.BetterBlockPos baritone.h.a()
-private void baritone.h.a(baritone.api.utils.BetterBlockPos)
-private void baritone.h.a(net.minecraft.util.math.BlockPos,boolean,baritone.bv)
-public final void baritone.h.a()
-private baritone.dg baritone.h.a(baritone.api.pathing.calc.IPath)
-private void baritone.h.a(boolean,net.minecraft.util.math.BlockPos,baritone.api.pathing.goals.Goal,baritone.bs,long,long)
-private static baritone.bs baritone.h.a(net.minecraft.util.math.BlockPos,baritone.api.pathing.goals.Goal,baritone.api.pathing.calc.IPath,baritone.bv)   
-private static double baritone.h.a(double,double,baritone.api.utils.BetterBlockPos)
-private void baritone.h.a(baritone.api.event.events.PathEvent)
-public final boolean baritone.h.a()
-public final boolean baritone.h.a(baritone.api.process.PathingCommand)      
-public final void baritone.h.onPlayerSprintState(baritone.api.event.events.SprintStateEvent)
-public final baritone.api.pathing.path.IPathExecutor baritone.h.getNext()   
-public final void baritone.h.onRenderPass(baritone.api.event.events.RenderEvent)
-public final void baritone.h.forceCancel()
-public final java.util.Optional baritone.h.getInProgress()
-public final boolean baritone.h.cancelEverything()
-public final void baritone.h.onPlayerUpdate(baritone.api.event.events.PlayerUpdateEvent)
-public final java.util.Optional baritone.h.estimatedTicksToGoal()
-public final boolean baritone.h.isPathing()
-public final void baritone.h.onTick(baritone.api.event.events.TickEvent)    
-public final baritone.api.pathing.path.IPathExecutor baritone.h.getCurrent()
-public final baritone.api.pathing.goals.Goal baritone.h.getGoal()
- */
-/* IMovement
- * dd
-public final void baritone.dd.reset()
-public final boolean baritone.dd.b(baritone.by)
-public final baritone.by baritone.dd.a(baritone.by)
-public final boolean baritone.dd.a(baritone.by)
-public static double baritone.dd.a(baritone.bv,int,int,int,int,int)
-public final java.util.Set baritone.dd.a()
-public final double baritone.dd.a(baritone.bv)
- */
-/*
-f
-public final void baritone.f.updateTarget(baritone.api.utils.Rotation,boolean)
-public final void baritone.f.onPlayerUpdate(baritone.api.event.events.PlayerUpdateEvent)
-public final void baritone.f.onPlayerRotationMove(baritone.api.event.events.RotationMoveEvent)
- */
-
-
-                    /*Class thisClass = BaritoneAPI.getProvider().getPrimaryBaritone().getInputOverrideHandler().getClass();
-                    Method[] methods = thisClass.getDeclaredMethods();
-
-                    for (int i = 0; i < methods.length; i++) {
-                        System.out.println(methods[i].toString());
-                    }*/
-                    /*
-public final void baritone.eq.clearAllKeys()
-public final void baritone.eq.onTick(baritone.api.event.events.TickEvent)   
-public final boolean baritone.eq.isInputForcedDown(baritone.api.utils.input.Input)
-public final void baritone.eq.setInputForceState(baritone.api.utils.input.Input,boolean)
-                     */
-                    //System.out.println(BaritoneAPI.getProvider().getPrimaryBaritone().getInputOverrideHandler().getClass().getDeclaredMethods().);
-                    //System.out.println(BaritoneAPI.getProvider().getPrimaryBaritone().getInputOverrideHandler().getClass().getSimpleName());
-                    /*System.out.println("Soft Pause");
-                    System.out.println(((IBaritoneAPIMixin) BaritoneAPI.getProvider()).getSoftPause());
-                    ((IBaritoneAPIMixin) BaritoneAPI.getProvider()).setSoftPause(!((IBaritoneAPIMixin) BaritoneAPI.getProvider()).getSoftPause());
-                    System.out.println(((IBaritoneAPIMixin) BaritoneAPI.getProvider()).getSoftPause());*/
-                }
+                //if (isBotting) {
+                   //Check IBaritoneAPIMixin.java to see this madness
+                //}
                 /*if (isBotting) {
                     if (botMode == 0) {
                         botMode = 1;
@@ -446,7 +404,7 @@ public final void baritone.eq.setInputForceState(baritone.api.utils.input.Input,
                 if (botMode == 0) {
                     DunderPvE.doPvE(this);
                 } else if (botMode == 1) {
-                    doJumpsprint(0);
+                    DunderJumpSprint.doJumpsprint(this, 3);
                 } else if (botMode == 2) {
                     doAdjustTests();
                 } else if (botMode == 3) {
@@ -626,172 +584,6 @@ public final void baritone.eq.setInputForceState(baritone.api.utils.input.Input,
         return false;
     }*/
 
-    public void doJumpsprint(int depth) {
-      if (noJumpAttempts <= 0 && player.isOnGround()) {
-        System.out.println("oh yeah");
-        int bestPos = -1;
-        try {
-
-
-            //
-            List<BetterBlockPos> bPos = new ArrayList<BetterBlockPos>();
-            if (BaritoneAPI.getProvider().getPrimaryBaritone().getPathingBehavior() != null &&
-                    BaritoneAPI.getProvider().getPrimaryBaritone().getPathingBehavior().getPath() != null &&
-                    BaritoneAPI.getProvider().getPrimaryBaritone().getPathingBehavior().getPath().get() != null &&
-                    BaritoneAPI.getProvider().getPrimaryBaritone().getPathingBehavior().getPath().get().positions() != null &&
-                    BaritoneAPI.getProvider().getPrimaryBaritone().getPathingBehavior().getPath().get().positions().get(0) != null) {//was .getLast()
-                //bPos = BaritoneAPI.getProvider().getPrimaryBaritone().getPathingBehavior().getPath().get().positions();
-                bPos.clear();
-                bPos.addAll(BaritoneAPI.getProvider().getPrimaryBaritone().getPathingBehavior().getPath().get().positions());
-                IPathExecutor extraSegment = BaritoneAPI.getProvider().getPrimaryBaritone().getPathingBehavior().getNext();
-                if (    extraSegment != null &&
-                        extraSegment.getPath() != null &&
-                        extraSegment.getPath().positions() != null &&
-                        extraSegment.getPath().positions().get(0) != null) {
-                    bPos.addAll(extraSegment.getPath().positions());
-                }
-            }
-            //
-
-
-            //List<BetterBlockPos> bPos = BaritoneAPI.getProvider().getPrimaryBaritone().getPathingBehavior().getPath().get().positions();
-            bestPos = Math.min(BaritoneAPI.getProvider().getPrimaryBaritone().getPathingBehavior().getCurrent().getPosition() - 1, 0);
-            if (bestPos < 0) {bestPos = 0;}
-            for (int i = bestPos; i < bPos.size(); i++) {
-                if (player.getPos().distanceTo( new Vec3d(bPos.get(i).x, bPos.get(i).y, bPos.get(i).z)) <
-                    player.getPos().distanceTo( new Vec3d(bPos.get(bestPos).x, bPos.get(bestPos).y, bPos.get(bestPos).z))) {
-                    bestPos = i;
-                }
-                //particle
-                world.addParticle(ParticleTypes.FLAME,
-                        bPos.get(i).x+0.5,
-                        bPos.get(i).y,
-                        bPos.get(i).z+0.5, 0.0, 0.0, 0.0);
-            }
-            world.addParticle(ParticleTypes.HEART,
-                    bPos.get(bestPos).x+0.5,
-                    bPos.get(bestPos).y+0.25,
-                    bPos.get(bestPos).z+0.5, 0.0, 0.0, 0.0);
-            bestPathNum = bestPos - BaritoneAPI.getProvider().getPrimaryBaritone().getPathingBehavior().getCurrent().getPosition() + 1;
-
-            //BaritoneAPI.getProvider().getPrimaryBaritone
-            //BaritoneAPI.getProvider().getPrimaryBaritone().getPathingBehavior().getNext().getPath().positions();
-            
-            //setCurrentPathPosition(bestPos);
-        } catch (Exception e) {
-            System.out.println("Baked:\n" + e);
-        }
-
-        boolean[] playerControlList = new boolean[8];
-        for (int i = 0; i < 8; i++) {playerControlList[i] = (i == 1 || i == 2 || i == 3);}
-        SimInstance myStateBase = new SimInstance(player.isOnGround(), playerControlList, client.player.getPos(), client.player.getVelocity(), (float)(Math.PI + (-client.player.getYaw() * Math.PI / 180.0)));
-
-        jumpSprintStates.clear();
-        leBest = null;
-        //Simulate jump sprints
-        /*myStateBase.yaw = (float)(myStateBase.yaw * (float)(180/(float)Math.PI));
-        myStateBase.yaw = (float)Math.round(myStateBase.yaw / 10)*10;
-        myStateBase.yaw = myStateBase.yaw * (float)Math.PI/180;*/
-        for (int j = 0; j < 7; j++) {
-            SimInstance myState = myStateBase.clone();
-            myState.yaw = (float)(myStateBase.yaw - (Math.PI / 2) + (Math.PI / 8) + ((Math.PI / 8) * new int[]{3,4,2,5,1,7,0}[j]));
-            jumpSprintState pushDis = simulateAction(depth, bestPos, 0, new Vec3d(0, 0, 0), myState);
-            if (pushDis != null) {
-                jumpSprintStates.add(pushDis);
-            }
-        }
-        for (int j = 0; j < 5; j++) {
-            SimInstance myState = myStateBase.clone();
-            myState.controljump = false;
-            myState.myControls[1] = false;
-            myState.yaw = (float)(myStateBase.yaw - (Math.PI / 2) + (Math.PI / 8) + ((Math.PI / 8) * new int[]{3,4,2/* ,5,1*/,7,0}[j]));
-            jumpSprintState pushDis = simulateAction(depth, bestPos, 1, new Vec3d(0, 0, 0), myState);
-            if (pushDis != null) {
-                jumpSprintStates.add(pushDis);
-            }
-        }
-        /*for (int j = 0; j < 1; j++) {
-          SimInstance myState = myStateBase.clone();
-          myState.controlleft = true;
-          myState.myControls.set(5, true);
-          myState.yaw = (float)(myStateBase.yaw - (Math.PI / 2) + (Math.PI / 8) + ((Math.PI / 8) * new int[]{3,4,2,5,1,7,0}[j]));
-          jumpSprintState pushDis = simulateAction(1, bestPos, 0, new Vec3d(0, 0, 0), myState);
-          if (pushDis != null) {
-              jumpSprintStates.add(pushDis);
-          }
-        }
-        for (int j = 0; j < 1; j++) {
-          SimInstance myState = myStateBase.clone();
-          myState.controlright = true;
-          myState.myControls.set(6, true);
-          myState.yaw = (float)(myStateBase.yaw - (Math.PI / 2) + (Math.PI / 8) + ((Math.PI / 8) * new int[]{3,4,2,5,1,7,0}[j]));
-          jumpSprintState pushDis = simulateAction(1, bestPos, 0, new Vec3d(0, 0, 0), myState);
-          if (pushDis != null) {
-              jumpSprintStates.add(pushDis);
-          }
-        }*/
-        
-        /*for (int j = 0; j < 7; j++) {
-          SimInstance myState = myStateBase.clone();
-          myState.controlsprint = false;
-          myState.myControls.set(2, false);
-          myState.yaw = (float)(myStateBase.yaw - (Math.PI / 2) + (Math.PI / 8) + ((Math.PI / 8) * new int[]{3,4,2,5,1,7,0}[j]));
-          jumpSprintState pushDis = simulateAction(bestPos, 0, new Vec3d(0, 0, 0), myState);
-          if (pushDis != null) {
-              jumpSprintStates.add(pushDis);
-          }
-        }*/
-        if (jumpSprintStates.size() > 0) {
-            int myBestState = 0;
-            for (int i = 0; i < jumpSprintStates.size(); i++) {
-                if (jumpSprintStates.get(i).open == true && jumpSprintStates.get(i).score < jumpSprintStates.get(myBestState).score) {
-                    myBestState = i;
-                }
-            }
-
-            if (myBestState >= 0) {
-                leBest = jumpSprintStates.get(myBestState);
-                if (!leBest.shouldJump) {
-                    noJumpAttempts = 2;
-                }
-                //player.setYaw((float)-((leBest.state.yaw - Math.PI) * 180.0f / Math.PI));
-            }
-            /*if (searchCount <= 0) {
-                //console.log("decent jumps found");
-                jumpSprintState mySearcher = jumpSprintStates.get(myBestState);
-                *while (mySearcher.parent) {
-                    bot.dunder.jumpTargets.push(mySearcher.state.pos);
-                    mySearcher = mySearcher.parent;
-                }*
-                jumpTargets.add(mySearcher.state.pos);
-                jumpTarget = mySearcher.state.pos;
-                jumpYaw = mySearcher.state.yaw;
-                bestJumpSprintState = myBestState;
-                if (mySearcher.state.isInLava) {System.out.println("fire");}
-                if (mySearcher.score > -131) {
-                    jumpTargetDelay = 15;
-                }
-            }*/
-          }
-      }
-
-      //c_W = true;
-      if (leBest != null) {
-        player.setYaw((float)-((leBest.state.yaw - Math.PI) * 180.0f / Math.PI));
-        c_W = leBest.state.controlforward;
-        c_A = leBest.state.controlleft;
-        c_D = leBest.state.controlright;
-        c_spr = leBest.state.controlsprint;
-        c_j = (player.getVelocity().y <= 0) && leBest.state.controljump;
-        //System.out.println(leBest.state.controlleft + ", " + leBest.state.controlright);
-      }
-
-        //simulateAction(0, new Vec3d(0, player.getY(), 0), myStateBase);
-    }
-
-
-
-
 
 
 
@@ -863,50 +655,19 @@ public void setCurrentPathPosition(int newIndex) {
     }*/
 
 public jumpSprintState simulateAction(int depth, int index, int action, Vec3d target, SimInstance stateBase) {
-    double walker = 0.5 - (0.25 * action);
-    BetterBlockPos myBlock;
-    List<BetterBlockPos> bPos = new ArrayList<BetterBlockPos>();
-    int currentMove = 0;
+
     if (index >= 0) {
         currentMove = index;
+    } else if (index == -1) {
+        DunderBotdlcClient.currentMove = BaritoneAPI.getProvider().getPrimaryBaritone().getPathingBehavior().getCurrent().getPosition();
     }
+    //System.out.println(DunderBotdlcClient.currentMove + ", " + DunderBotdlcClient.myBlock.x + ", " + DunderBotdlcClient.myBlock.y + ", " + DunderBotdlcClient.myBlock.z);
 
-    try {
-      if (BaritoneAPI.getProvider().getPrimaryBaritone().getPathingBehavior() != null &&
-        BaritoneAPI.getProvider().getPrimaryBaritone().getPathingBehavior().getPath() != null &&
-        BaritoneAPI.getProvider().getPrimaryBaritone().getPathingBehavior().getPath().get() != null &&
-        BaritoneAPI.getProvider().getPrimaryBaritone().getPathingBehavior().getPath().get().positions() != null &&
-        BaritoneAPI.getProvider().getPrimaryBaritone().getPathingBehavior().getPath().get().positions().get(0) != null) {//was .getLast()
-          //bPos = BaritoneAPI.getProvider().getPrimaryBaritone().getPathingBehavior().getPath().get().positions();
-          bPos.clear();
-          bPos.addAll(BaritoneAPI.getProvider().getPrimaryBaritone().getPathingBehavior().getPath().get().positions());
-          IPathExecutor extraSegment = BaritoneAPI.getProvider().getPrimaryBaritone().getPathingBehavior().getNext();
-          if (extraSegment != null &&
-              extraSegment.getPath() != null &&
-              extraSegment.getPath().positions() != null &&
-              extraSegment.getPath().positions().get(0) != null) {
-              bPos.addAll(extraSegment.getPath().positions());
-          }
-
-
-            /*BaritoneAPI.getProvider().getPrimaryBaritone().getPathingBehavior().getCurrent().getClass().getDeclaredField("pathPosition").setAccessible(true);
-            BaritoneAPI.getProvider().getPrimaryBaritone().getPathingBehavior().getCurrent().getClass().getDeclaredField("pathPosition").set(
-                BaritoneAPI.getProvider().getPrimaryBaritone().getPathingBehavior().getCurrent(),
-                BaritoneAPI.getProvider().getPrimaryBaritone().getPathingBehavior().getCurrent().getPosition() + 3
-            );*/
-            if (index == -1) {
-                currentMove = BaritoneAPI.getProvider().getPrimaryBaritone().getPathingBehavior().getCurrent().getPosition();
-            }
-            myBlock = BaritoneAPI.getProvider().getPrimaryBaritone().getPathingBehavior().getPath().get().positions().get(currentMove);
-            /*System.out.println(
-                "sppoky: " + BaritoneAPI.getProvider().getPrimaryBaritone().getPathingBehavior().getPath().get().positions().size() + ", " +
-                BaritoneAPI.getProvider().getPrimaryBaritone().getPathingBehavior().getCurrent().getPosition()
-                );*/
-            System.out.println(currentMove + ", " + myBlock.x + ", " + myBlock.y + ", " + myBlock.z);
-        }
-    } catch (Exception e) {
-        //System.out.println("Ya done goofed\n" + e);
-    }
+    //Profiling
+    /*if (depth >= 0) {
+        return new jumpSprintState(stateBase, true, true, 0.0);
+    }*/
+    double walker = 0.5 - (0.25 * action);
 
     //int minimumMove = Math.min(bPos.size(), 20);
 
@@ -927,7 +688,7 @@ public jumpSprintState simulateAction(int depth, int index, int action, Vec3d ta
             i = 30;
             //System.out.println("(!!!)Doing thingies2: " + dist3d(myState.x, 0, myState.z, stateBase.x, 0, stateBase.z));
         }
-            if (depth == 1 && i % 3 == 0) {
+            /*if (depth == 1 && i % 3 == 0) {
                 world.addParticle(ParticleTypes.FLAME,
                                       myState.x,
                                       myState.y,
@@ -937,7 +698,7 @@ public jumpSprintState simulateAction(int depth, int index, int action, Vec3d ta
                                       myState.x,
                                       myState.y,
                                       myState.z, 0.0, 0.0, 0.0);
-            }
+            }*/
         //console.log(JSON.stringify(myState));
         //if (myState.isCollidedHorizontally) {myScore += 0.25;}
     }
