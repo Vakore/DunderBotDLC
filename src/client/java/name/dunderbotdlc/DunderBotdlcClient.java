@@ -18,8 +18,13 @@ package name.dunderbotdlc;
 
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import name.dunderbotdlc.commands.*;
+import name.dunderbotdlc.inventorymanagement.InventoryScorer;
+import name.dunderbotdlc.physics.SimInstance;
+import name.dunderbotdlc.physics.SimpleSim;
+import name.dunderbotdlc.physics.SmartWalk;
+import name.dunderbotdlc.structs.jumpSprintState;
 import net.fabricmc.api.ClientModInitializer;
-//import name.dunderbotdlc.commands.AABB;
+//import name.dunderbotdlc.structs.AABB;
 //import name.dunderbotdlc.mixin.client.BaritoneAPIMixin;
 //import name.dunderbotdlc.mixin.client.PathingBehaviorMixin;
 
@@ -73,7 +78,6 @@ import net.minecraft.particle.ParticleTypes;
 //import net.minecraft.util.math.BlockPos;
 import net.minecraft.screen.slot.SlotActionType;
 import net.minecraft.text.Text;
-import net.minecraft.util.Formatting;
 import net.minecraft.util.math.Vec3d;
 /*import net.minecraft.entity.projectile.ProjectileEntity;
 import net.minecraft.util.math.BlockPos;
@@ -90,44 +94,44 @@ import net.minecraft.client.option.KeyBinding;
 public class DunderBotdlcClient implements ClientModInitializer {
     public static int bestPathNum = 0;
 
-    private boolean isBotting = false;
-    private IBaritone bbaritone;
+    public boolean isBotting = false;
+    public IBaritone bbaritone;
     //private PathingCommand pauseCommand;
-    private int attackCooldown = 0;
-    private ClientWorld world;
-    private Entity target;
-    private int targetID;
-    private double threatLevel;
-    private Vec3d playerPos;
-    private PlayerEntity player;
+    public int attackCooldown = 0;
+    public ClientWorld world;
+    public Entity target;
+    public int targetID;
+    public double threatLevel;
+    public Vec3d playerPos;
+    public PlayerEntity player;
     public static MinecraftClient client;
 
-    private boolean c_spr = false;
-    private boolean c_W = false;
-    private boolean c_S = false;
-    private boolean c_A = false;
-    private boolean c_D = false;
-    private boolean c_Z = false;
-    private boolean c_j = false;
-    private boolean c_lc = false;
-    private boolean c_rc = false;
-    private int shieldTimer = 0;
-    private int botMode = 1;
-    private Map<String, Integer> mobMap = new HashMap<String, Integer>();
-    private Map<String, Vec3d> projectileMap = new HashMap<String, Vec3d>();
-    private ArrayList<Entity> threatList = new ArrayList<Entity>();
-    private ArrayList<Double> threatTable = new ArrayList<Double>();
-    private ArrayList<Double> threatDist = new ArrayList<Double>();
+    public boolean c_spr = false;
+    public boolean c_W = false;
+    public boolean c_S = false;
+    public boolean c_A = false;
+    public boolean c_D = false;
+    public boolean c_Z = false;
+    public boolean c_j = false;
+    public boolean c_lc = false;
+    public boolean c_rc = false;
+    public int shieldTimer = 0;
+    public int botMode = 1;
+    public Map<String, Integer> mobMap = new HashMap<String, Integer>();
+    public Map<String, Vec3d> projectileMap = new HashMap<String, Vec3d>();
+    public ArrayList<Entity> threatList = new ArrayList<Entity>();
+    public ArrayList<Double> threatTable = new ArrayList<Double>();
+    public ArrayList<Double> threatDist = new ArrayList<Double>();
 
-    private ArrayList<jumpSprintState> jumpSprintStates = new ArrayList<jumpSprintState>();
-    private jumpSprintState leBest;
+    public ArrayList<jumpSprintState> jumpSprintStates = new ArrayList<jumpSprintState>();
+    public jumpSprintState leBest;
     //private ArrayList<Vec3d> jumpTargets = new ArrayList<Vec3d>();
     //private Vec3d jumpTarget;
     //private float jumpYaw;
     //private int bestJumpSprintState;
-    private int noJumpAttempts = 0;
+    public int noJumpAttempts = 0;
 	//private Rotation rotation;
-    private PrintStream myStream;
+    public PrintStream myStream;
 
 	@Override
 	public void onInitializeClient() {
@@ -440,7 +444,7 @@ public final void baritone.eq.setInputForceState(baritone.api.utils.input.Input,
             if (isBotting) {
                 //PvE code.
                 if (botMode == 0) {
-                    doPvE();
+                    DunderPvE.doPvE(this);
                 } else if (botMode == 1) {
                     doJumpsprint(0);
                 } else if (botMode == 2) {
@@ -532,7 +536,7 @@ public final void baritone.eq.setInputForceState(baritone.api.utils.input.Input,
         }
     }
 
-	private void lookAtEntity(PlayerEntity player, Entity entity) {
+	public void lookAtEntity(PlayerEntity player, Entity entity) {
         Vec3d playerPos = player.getPos().add(0, 1.6, 0);
         float yAt = -1.0f;//(float)entity.getEyeHeight(null);
         if (entity.getY() > player.getPos().y + 1.6) {
@@ -564,13 +568,13 @@ public final void baritone.eq.setInputForceState(baritone.api.utils.input.Input,
         //baritone.getLookBehavior().updateTarget(rotation, true);
     }
     
-    private void releaseKey(ClientPlayerEntity player, KeyBinding keyBinding) {
+    public void releaseKey(ClientPlayerEntity player, KeyBinding keyBinding) {
         if (keyBinding.isPressed()) {
             keyBinding.setPressed(false);
         }
     }
 
-    private void pressKey(ClientPlayerEntity player, KeyBinding keyBinding, boolean spam) {
+    public void pressKey(ClientPlayerEntity player, KeyBinding keyBinding, boolean spam) {
         if (spam) {
             //System.out.println(keyBinding.isPressed());
         }
@@ -622,7 +626,7 @@ public final void baritone.eq.setInputForceState(baritone.api.utils.input.Input,
         return false;
     }*/
 
-    private void doJumpsprint(int depth) {
+    public void doJumpsprint(int depth) {
       if (noJumpAttempts <= 0 && player.isOnGround()) {
         System.out.println("oh yeah");
         int bestPos = -1;
@@ -678,8 +682,8 @@ public final void baritone.eq.setInputForceState(baritone.api.utils.input.Input,
             System.out.println("Baked:\n" + e);
         }
 
-        ArrayList<Boolean> playerControlList = new ArrayList<Boolean>();
-        for (int i = 0; i < 8; i++) {playerControlList.add(i == 1 || i == 2 || i == 3);}
+        boolean[] playerControlList = new boolean[8];
+        for (int i = 0; i < 8; i++) {playerControlList[i] = (i == 1 || i == 2 || i == 3);}
         SimInstance myStateBase = new SimInstance(player.isOnGround(), playerControlList, client.player.getPos(), client.player.getVelocity(), (float)(Math.PI + (-client.player.getYaw() * Math.PI / 180.0)));
 
         jumpSprintStates.clear();
@@ -699,7 +703,7 @@ public final void baritone.eq.setInputForceState(baritone.api.utils.input.Input,
         for (int j = 0; j < 5; j++) {
             SimInstance myState = myStateBase.clone();
             myState.controljump = false;
-            myState.myControls.set(1, false);
+            myState.myControls[1] = false;
             myState.yaw = (float)(myStateBase.yaw - (Math.PI / 2) + (Math.PI / 8) + ((Math.PI / 8) * new int[]{3,4,2/* ,5,1*/,7,0}[j]));
             jumpSprintState pushDis = simulateAction(depth, bestPos, 1, new Vec3d(0, 0, 0), myState);
             if (pushDis != null) {
@@ -786,227 +790,7 @@ public final void baritone.eq.setInputForceState(baritone.api.utils.input.Input,
     }
 
 
-    /*
-    5. Something better
-    4. Fixed
-    3. Acceptable
-    2. Tolerable
-    1. Hacky
-    0. TODO
 
-    Problems:
-    FIXED - Always looking at top of entity when it should look straight at times
-    Potentially distance to attack calculations
-
-    Swimming/dealing with objects that need to be pathfinded
-
-    Seeing non-threats as threats(zombified pigmen, piglins when wearing
-    gold armor, wolves, passive mobs, etc.)
-
-    Trying to kill threats that are too far away, not visible(i.e. cave),
-    or not worth worrying about(zombie 8 blocks off the path when you're
-    moving away from it)
-
-    Jockey Entities
-    
-    Projectiles
-     Arrows: 1
-     Blaze fireballs: 0
-
-    Fighting projectile mobs without a shield
-
-    Specific scenarios:
-    1. Skeleton on both sides of the player - Tolerable
-    2. Singular blaze - 0
-    3. Skeleton Jockey - 0 - Player needs to be able to jump, shield, turn around, unshield
-    4. 2 skeleton + 2 zombie combo - 0
-    */
-    
-    private void doPvE() {
-        threatList.clear();
-        threatTable.clear();
-        threatDist.clear();
-        for (Entity entity : world.getEntities()) {
-            double distance = playerPos.distanceTo(entity.getPos());
-            double threatLvl = 1/Math.max(0.5, distance);
-            if (entity instanceof ArrowEntity) {
-                //System.out.println(entity.getVelocity().length());
-                if (projectileMap.get(entity.getUuidAsString()) != null &&
-                    projectileMap.get(entity.getUuidAsString()).subtract(entity.getPos()).equals(Vec3d.ZERO) ||
-                    entity.getPos().distanceTo(playerPos) < entity.getPos().add(entity.getVelocity()).distanceTo(playerPos) ||
-                    entity.getVelocity().length() < 0.7) {
-                    mobMap.put(entity.getUuidAsString(), 1);
-                } else if (projectileMap.get(entity.getUuidAsString()) != null) {
-                    mobMap.remove(entity.getUuidAsString());
-                    threatLvl *= 5;
-                    threatLvl += 10;
-                } else {
-                    threatLvl *= 5;
-                    threatLvl += 10;
-                }
-                projectileMap.put(entity.getUuidAsString(), new Vec3d(entity.getX(), entity.getY(), entity.getZ()));
-            } else if (entity.getClass().getSimpleName().matches("SkeletonEntity|IllusionerEntity|StrayEntity")) {
-                threatLvl /= 3.0;
-                boolean foundId = false;
-                for (int i = 0; i < entity.getDataTracker().getChangedEntries().size(); i++) {
-                    if (entity.getDataTracker().getChangedEntries().get(i).id() == 8) {
-                        mobMap.put(entity.getUuidAsString(),
-                        (mobMap.get(entity.getUuidAsString()) != null) ? (mobMap.get(entity.getUuidAsString()) + 1) : 1);
-                        foundId = true;
-                    }
-                }
-                if (!foundId) {
-                    mobMap.put(entity.getUuidAsString(), 1);
-                }
-                if (mobMap.get(entity.getUuidAsString()) != null && mobMap.get(entity.getUuidAsString()) >= 3) {
-                    threatLvl += mobMap.get(entity.getUuidAsString()) / 15;
-                }
-            }
-            if (distance <= 16 && distance > 0) {
-                if (!(entity instanceof ArrowEntity)) {
-                    System.out.println(entity.getClass().getSimpleName() + ", " + threatLvl);
-                }
-                //System.out.println(entity instanceof net.minecraft.entity.projectile.ArrowEntity);
-                if ((entity.isAttackable() && entity.isAlive() && !(entity instanceof FireballEntity) ||
-                    entity instanceof ArrowEntity &&
-                    mobMap.get(entity.getUuidAsString()) == null)) {
-                    threatList.add(entity);
-                    threatDist.add(distance);
-                    threatTable.add(threatLvl);
-                    if ((target == null || threatLvl > threatLevel/*distance < playerPos.distanceTo(target.getPos()))*/)) {
-                        target = entity;
-                        targetID = threatList.size() - 1;
-                        threatLevel = threatLvl;
-                    }
-                }
-            }
-        }
-
-
-        // && BaritoneAPI.getProvider().getPrimaryBaritone().getPathingBehavior().getNext().getPath().movements().getLast().safeToCancel()
-        if (target != null && isBotting) {//(!!!)
-            //BaritoneAPI.getProvider().getPrimaryBaritone().getCommandManager().execute("pause");
-            //simulateAction();
-            //BaritoneAPI.getProvider().getPrimaryBaritone().getPathingBehavior().cancelEverything();
-            //baritone.getPathingBehavior().execute(pauseCommand);
-            //System.out.println("Entity: " + entity.getType().getName().getString() + " at " + entity.getPos() + " is within 3 blocks of the player");
-            lookAtEntity(player, target);
-            double distance = playerPos.distanceTo(target.getPos());
-            //System.out.println(target.getVelocity());
-            //System.out.println(target.groundCollision);
-            //System.out.println(target.get);
-            double threatDistance = 3.0;
-            if (target.getClass().getSimpleName().matches("SkeletonEntity|IllusionerEntity|StrayEntity") &&
-                true/*target.getHandItems().forEach()*/) {
-                threatDistance = 0.2;
-            }
-
-
-            int bestTarget = -1;
-            for (int i = 0; i < threatDist.size(); i++) {
-                if (threatList.get(i) instanceof ArrowEntity) {
-                    continue;
-                }
-
-                if (bestTarget == -1 ||
-                    playerPos.distanceTo(threatList.get(i).getPos()) <
-                    playerPos.distanceTo(threatList.get(bestTarget).getPos())) {
-                    bestTarget = i;
-                }
-            }
-            
-            if (bestTarget - targetID == 0) {
-                if (distance > threatDistance) {
-                    ArrayList<Boolean> playerControlList = new ArrayList<Boolean>();
-                    for (int i = 0; i < 16; i++) {playerControlList.add(i == 3);}
-                    playerControlList = SmartWalk.moveInDir(new SimInstance(client.player.isOnGround(), playerControlList, client.player.getPos(), client.player.getVelocity(), (float)(Math.PI + (-client.player.getYaw() * Math.PI / 180.0))));
-                    c_W = playerControlList.get(3);
-                    c_S = false;
-                    c_Z = playerControlList.get(0);
-                    c_j = playerControlList.get(1);
-                    c_spr = c_W;
-                } else {
-                    ArrayList<Boolean> playerControlList = new ArrayList<Boolean>();
-                    for (int i = 0; i < 8; i++) {playerControlList.add(i == 4);}
-                    playerControlList = SmartWalk.moveInDir(new SimInstance(client.player.isOnGround(), playerControlList, client.player.getPos(), client.player.getVelocity(), (float)(Math.PI + (-client.player.getYaw() * Math.PI / 180.0))));
-                    c_W = false;
-                    c_spr = false;
-                    c_S = playerControlList.get(4);
-                    c_Z = playerControlList.get(0);
-                    c_j = playerControlList.get(1);
-                }
-            } else {
-                boolean isSkele = threatList.get(bestTarget).getClass().getSimpleName().matches("SkeletonEntity|IllusionerEntity|StrayEntity");
-                ArrayList<Boolean> playerControlList = new ArrayList<Boolean>();
-                for (int i = 0; i < 8; i++) {playerControlList.add(false);}
-                
-                if (playerPos.distanceTo(threatList.get(bestTarget).getPos()) >
-                    playerPos.add(Math.cos(Math.toRadians(player.getYaw() + 90)) * 0.2, 0, Math.sin(Math.toRadians(player.getYaw() + 90)) * 0.2).distanceTo(threatList.get(bestTarget).getPos())) {
-                        playerControlList.set(3, isSkele);
-                        playerControlList.set(4, !isSkele);
-                } else {
-                    playerControlList.set(4, isSkele);
-                    playerControlList.set(3, !isSkele);
-                }
-                
-                if (playerPos.distanceTo(threatList.get(bestTarget).getPos()) >
-                    playerPos.add(Math.cos(Math.toRadians(player.getYaw())) * 0.2, 0, Math.sin(Math.toRadians(player.getYaw())) * 0.2).distanceTo(threatList.get(bestTarget).getPos())) {
-                    playerControlList.set(5, isSkele);
-                    playerControlList.set(6, !isSkele);
-                } else {
-                    playerControlList.set(6, isSkele);
-                    playerControlList.set(5, !isSkele);
-                }
-
-                playerControlList = SmartWalk.moveInDir(new SimInstance(client.player.isOnGround(), playerControlList, client.player.getPos(), client.player.getVelocity(), (float)(Math.PI + (-client.player.getYaw() * Math.PI / 180.0))));
-                c_W = playerControlList.get(3);
-                c_S = playerControlList.get(4);
-                c_A = playerControlList.get(5);
-                c_D = playerControlList.get(6);
-                c_Z = playerControlList.get(0);
-                c_j = playerControlList.get(1);
-                c_spr = playerControlList.get(2);
-            }
-
-            
-                if (target.getClass().getSimpleName().matches("SkeletonEntity|IllusionerEntity|StrayEntity") &&
-                    mobMap.get(target.getUuidAsString()) != null &&
-                    mobMap.get(target.getUuidAsString()) >= 11) {
-                    shieldTimer = 2;
-                } else if (target.getClass().getSimpleName().matches("BlazeEntity")) {
-                    for (int i = 0; i < target.getDataTracker().getChangedEntries().size(); i++) {
-                        if (target.getDataTracker().getChangedEntries().get(i).id() == 16) {
-                            shieldTimer = 2;
-                        }
-                    }
-                } else if (target.getClass().getSimpleName().matches("CreeperEntity")) {
-                    for (int i = 0; i < target.getDataTracker().getChangedEntries().size(); i++) {
-                        if (target.getDataTracker().getChangedEntries().get(i).id() == 16) {
-                            shieldTimer = 2;
-                        }
-                    }
-                } else if (target instanceof ArrowEntity) {
-                    shieldTimer = 2;
-                }
-                //System.out.println(client.player.getOffHandStack().getRegistryEntry());
-            if (target.isAttackable() && shieldTimer <= 0 && !client.options.attackKey.isPressed() && attackCooldown >= 12 && distance <= 3.0 && target.isAttackable() && target.isAlive()) {
-                client.interactionManager.attackEntity(client.player, target);
-                client.player.swingHand(client.player.preferredHand);
-                attackCooldown = 0;
-                c_lc = true;
-            } else {
-                c_lc = false;
-                releaseKey(client.player, client.options.attackKey);
-            }
-            if (shieldTimer > 0) {
-                c_rc = true;
-            }
-            pressKey(client.player, client.options.sprintKey, true);
-        } else if (isBotting) {
-            //BaritoneAPI.getProvider().getPrimaryBaritone().getCommandManager().execute("resume");
-            //simulateAction();
-        }
-    }
 
 
 
@@ -1128,6 +912,9 @@ public jumpSprintState simulateAction(int depth, int index, int action, Vec3d ta
 
 
     double myScore = 25;
+    //boolean[] barry = new boolean[stateBase.myControls.size()];
+    //OptimizedSimInstance myState = new OptimizedSimInstance(new Vec3d(stateBase.x, stateBase.y, stateBase.z), new Vec3d(stateBase.velX, stateBase.velY, stateBase.velZ), (float)stateBase.yaw, stateBase.onGround, barry, world);
+
     SimInstance myState = new SimInstance(stateBase.onGround, stateBase.myControls, new Vec3d(stateBase.x, stateBase.y, stateBase.z), new Vec3d(stateBase.velX, stateBase.velY, stateBase.velZ), (float)stateBase.yaw);
     for (int i = 0; i < 30; i++) {
         myState.simulatePlayer();
@@ -1354,10 +1141,10 @@ public jumpSprintState simulateAction(int depth, int index, int action, Vec3d ta
 
     int slowDownTicks = 0;
     int slowDownType = 1;
-    private void doAdjustTests2() {
+    public void doAdjustTests2() {
         slowDownTicks = SimpleSim.simpleProblem(player, 0, 1);
     }
-    private void doAdjustTests() {
+    public void doAdjustTests() {
         slowDownTicks--;
         if (player.isOnGround() && slowDownTicks <= 0) {
             slowDownTicks = SimpleSim.simpleProblem(player, 0, 0);

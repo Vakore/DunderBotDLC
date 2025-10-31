@@ -1,7 +1,7 @@
 package name.dunderbotdlc.mixin.client;
 
 import name.dunderbotdlc.DunderBotdlcClient;
-import name.dunderbotdlc.commands.IBaritoneAPIMixin;
+import name.dunderbotdlc.IBaritoneAPIMixin;
 import baritone.api.BaritoneAPI;
 
 import org.spongepowered.asm.mixin.Mixin;
@@ -11,7 +11,6 @@ import com.llamalad7.mixinextras.injector.ModifyExpressionValue;
 import com.llamalad7.mixinextras.injector.v2.WrapWithCondition;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
-import net.minecraft.client.MinecraftClient;
 
 @Mixin(baritone.dg.class)
 public abstract class PathExecutorMixin {

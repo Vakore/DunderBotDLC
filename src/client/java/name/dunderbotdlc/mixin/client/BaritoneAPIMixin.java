@@ -1,6 +1,6 @@
 package name.dunderbotdlc.mixin.client;
 
-import name.dunderbotdlc.commands.IBaritoneAPIMixin;
+import name.dunderbotdlc.IBaritoneAPIMixin;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
 
