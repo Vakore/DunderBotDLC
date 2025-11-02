@@ -1,8 +1,10 @@
 package name.dunderbotdlc.physics;
 
 import java.util.ArrayList;
+import java.util.Collections;
 
 import baritone.api.utils.input.Input;
+import name.dunderbotdlc.DunderBotdlcClient;
 import name.dunderbotdlc.structs.vec3e;
 import net.minecraft.block.*;
 import net.minecraft.client.world.ClientWorld;
@@ -13,6 +15,8 @@ import net.minecraft.util.math.Vec3d;
 import net.minecraft.util.shape.VoxelShape;
 import net.minecraft.util.shape.VoxelShapes;
 import name.dunderbotdlc.structs.AABB;
+
+import static name.dunderbotdlc.DunderBotdlcClient.blockCache;
 
 public class SimInstance {
     //physics
@@ -82,6 +86,8 @@ public class SimInstance {
 
     private ClientWorld world;
     public boolean[] myControls;
+    ArrayList<AABB> surroundingCachedBBs;
+    ArrayList<AABB> surroundingCachedBBs2;
 
     public SimInstance(boolean grounded, boolean[] leControls, Vec3d ps, Vec3d pv, float ya) {
         this.yaw = ya;
@@ -103,6 +109,9 @@ public class SimInstance {
         controlleft = leControls[5];
         controlright = leControls[6];
         myControls = leControls;
+
+        surroundingCachedBBs = new ArrayList<>();
+        surroundingCachedBBs2 = new ArrayList<>();
     }
 
 
@@ -112,6 +121,34 @@ public class SimInstance {
 
     public static double clamp(double value, double min, double max) {
         return Math.max(min, Math.min(value, max));
+    }
+
+
+    public void getCachedBBs(AABB queryBB, ArrayList<AABB> surroundingBBs) {
+        //return surroundingBBs; //profiling
+        for (int j = (int)(Math.floor(queryBB.minY) - 1.1); j <= (int)(Math.floor(queryBB.maxY) + 0.1); j++) {
+            for (int k = (int)(Math.floor(queryBB.minZ) - 0.1); k <= (int)(Math.floor(queryBB.maxZ) + 0.1); k++) {
+                for (int i = (int)(Math.floor(queryBB.minX) - 0.1); i <= (int)(Math.floor(queryBB.maxX) + 0.1); i++) {
+
+                    //BlockPos blockPos = new BlockPos((int)Math.floor(i), (int)Math.floor(j), (int)Math.floor(k));
+                    DunderBotdlcClient.CachedBlock blockData = blockCache.get(i, j, k);
+
+                    // Get cached collision boxes
+                    if (blockData.colliders != null) {
+                        Collections.addAll(surroundingBBs, blockData.colliders);
+                    }
+                    /*VoxelShape bst = world.getBlockState(blockPos).getCollisionShape(this.world, blockPos);
+                    if (bst != VoxelShapes.empty()) {
+                        if (bst.getBoundingBoxes().size() > 0) {
+                            for (int l = 0; l < bst.getBoundingBoxes().size(); l++) {
+                                Box bstBox = bst.getBoundingBoxes().get(l);
+                                surroundingBBs.add(new AABB((int)Math.floor(i) + bstBox.minX, (int)Math.floor(j) + bstBox.minY, (int)Math.floor(k) + bstBox.minZ, blockPos.getX() + bstBox.maxX, blockPos.getY() + bstBox.maxY, blockPos.getZ() + bstBox.maxZ));
+                            }
+                        }
+                    }*/
+                }
+            }
+        }
     }
 
     public ArrayList<AABB> getSurroundingBBs(AABB queryBB) {
@@ -220,26 +257,27 @@ public class SimInstance {
 
         AABB playerBB = getPlayerBB(new Vec3d(this.x, this.y, this.z));
         AABB queryBB = playerBB.clone().extend(dx, dy, dz);
-        ArrayList<AABB> surroundingBBs = getSurroundingBBs(queryBB);
+        this.surroundingCachedBBs.clear();
+        getCachedBBs(queryBB, surroundingCachedBBs);
         AABB oldBB = playerBB.clone();
 
-        for (AABB blockBB : surroundingBBs) {
+        for (AABB blockBB : surroundingCachedBBs) {
             dy = blockBB.computeOffsetY(playerBB, dy);
         }
         playerBB.offset(0.0, dy, 0.0);
 
-        for (AABB blockBB : surroundingBBs) {
+        for (AABB blockBB : surroundingCachedBBs) {
             dx = blockBB.computeOffsetX(playerBB, dx);
         }
         playerBB.offset(dx, 0.0, 0.0);
 
-        for (AABB blockBB : surroundingBBs) {
+        for (AABB blockBB : surroundingCachedBBs) {
             dz = blockBB.computeOffsetZ(playerBB, dz);
         }
         playerBB.offset(0.0, 0.0, dz);
 
         // Step on block if height < stepHeight
-        if (this.physicsStepHeight > 0.0 &&
+        if (this.physicsStepHeight > 0.0 && (dx != oldVelX || dz != oldVelZ) &&
                 (this.onGround || (dy != oldVelY && oldVelY < 0.0)) &&
                 (dx != oldVelX || dz != oldVelZ)) {
             double oldVelXCol = dx;
@@ -249,7 +287,8 @@ public class SimInstance {
 
             dy = this.physicsStepHeight;
             AABB queryBB2 = oldBB.clone().extend(oldVelX, dy, oldVelZ);
-            ArrayList<AABB> surroundingBBs2 = getSurroundingBBs(queryBB2);
+            surroundingCachedBBs2.clear();
+            getCachedBBs(queryBB2, surroundingCachedBBs2);
 
             AABB BB1 = oldBB.clone();
             AABB BB2 = oldBB.clone();
@@ -257,7 +296,7 @@ public class SimInstance {
 
             double dy1 = dy;
             double dy2 = dy;
-            for (AABB blockBB : surroundingBBs2) {
+            for (AABB blockBB : surroundingCachedBBs2) {
                 dy1 = blockBB.computeOffsetY(BB_XZ, dy1);
                 dy2 = blockBB.computeOffsetY(BB2, dy2);
             }
@@ -266,7 +305,7 @@ public class SimInstance {
 
             double dx1 = oldVelX;
             double dx2 = oldVelX;
-            for (AABB blockBB : surroundingBBs2) {
+            for (AABB blockBB : surroundingCachedBBs2) {
                 dx1 = blockBB.computeOffsetX(BB1, dx1);
                 dx2 = blockBB.computeOffsetX(BB2, dx2);
             }
@@ -275,7 +314,7 @@ public class SimInstance {
 
             double dz1 = oldVelZ;
             double dz2 = oldVelZ;
-            for (AABB blockBB : surroundingBBs2) {
+            for (AABB blockBB : surroundingCachedBBs2) {
                 dz1 = blockBB.computeOffsetZ(BB1, dz1);
                 dz2 = blockBB.computeOffsetZ(BB2, dz2);
             }
@@ -297,7 +336,7 @@ public class SimInstance {
                 playerBB = BB2;
             }
 
-            for (AABB blockBB : surroundingBBs2) {
+            for (AABB blockBB : surroundingCachedBBs2) {
                 dy = blockBB.computeOffsetY(playerBB, dy);
             }
             playerBB.offset(0.0, dy, 0.0);
@@ -327,19 +366,17 @@ public class SimInstance {
 
         // Finally, apply block collisions (web, bubble columns, etc.)
         playerBB.contract(0.001, 0.001, 0.001);
-        vec3e cursor = new vec3e(0.0, 0.0, 0.0);
-        for (cursor.y = Math.floor(playerBB.minY); cursor.y <= Math.floor(playerBB.maxY); cursor.y++) {
-            for (cursor.z = Math.floor(playerBB.minZ); cursor.z <= Math.floor(playerBB.maxZ); cursor.z++) {
-                for (cursor.x = Math.floor(playerBB.minX); cursor.x <= Math.floor(playerBB.maxX); cursor.x++) {
-                    BlockPos blockPos = new BlockPos((int)Math.floor(cursor.x), (int)Math.floor(cursor.y), (int)Math.floor(cursor.z));
-                    BlockState blockState = world.getBlockState(blockPos);
+        for (int j = (int)Math.floor(playerBB.minY); j <= (int)Math.floor(playerBB.maxY); j++) {
+            for (int k = (int)Math.floor(playerBB.minZ); k <= (int)Math.floor(playerBB.maxZ); k++) {
+                for (int i = (int)Math.floor(playerBB.minX); i <= (int)Math.floor(playerBB.maxX); i++) {
+                    DunderBotdlcClient.CachedBlock blockState = blockCache.get(i, j, k);//world.getBlockState(blockPos);
                     if (blockState != null) {
-                        if (blockState.getBlock() == Blocks.COBWEB) {
+                        if (blockState.isWeb) {
                             this.isInWeb = true;
-                        } else if (blockState.getBlock() == Blocks.BUBBLE_COLUMN) {
-                            boolean down = blockState.get(BubbleColumnBlock.DRAG);
+                        } else if (blockState.isBubbleDrag) {
+                            boolean down = blockState.bubbleDrag;
                             BlockState aboveBlock = world.getBlockState(
-                                    new BlockPos((int)Math.floor(cursor.x), (int)Math.floor(cursor.y + 1), (int)Math.floor(cursor.z))
+                                    new BlockPos(i, j+1, k)
                             );
                             boolean bubbleDragIsSurface = (aboveBlock != null && aboveBlock.getBlock() == Blocks.AIR);
                             if (down) {
@@ -434,6 +471,8 @@ public class SimInstance {
             }
 
             applyHeading(strafe, forward, acceleration);
+
+            //if (this.controljump) return; //profiling
             moveEntity(this.velX, this.velY, this.velZ);
 
             // Apply friction and gravity
@@ -518,13 +557,14 @@ public class SimInstance {
         }
 
         this.elytraFlying = false;
+        //if (this.controljump) return; //profiling
         this.moveEntityWithHeading(strafe, forward);
     }
 
     public SimInstance clone() {
         SimInstance newInstance = new SimInstance(
                 this.onGround,
-                this.myControls,
+                this.myControls.clone(),
                 new Vec3d(this.x, this.y, this.z),
                 new Vec3d(this.velX, this.velY, this.velZ),
                 this.yaw

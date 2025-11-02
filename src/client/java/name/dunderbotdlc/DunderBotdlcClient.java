@@ -148,7 +148,7 @@ public class DunderBotdlcClient implements ClientModInitializer {
 
     //
     // inside DunderBotdlcClient
-    public final BlockCache blockCache = new BlockCache();
+    public static final BlockCache blockCache = new BlockCache();
     public static int currentMove = 0;
     public static List<BetterBlockPos> bPos = new ArrayList<BetterBlockPos>();
 
@@ -156,16 +156,16 @@ public class DunderBotdlcClient implements ClientModInitializer {
         // key = ((x & 0xFFF)<<20) | ((z & 0xFFF)<<8) | (y & 0xFF)
         private final Long2ObjectOpenHashMap<CachedBlock> map = new Long2ObjectOpenHashMap<>();
 
-        void clear()        { map.clear(); }
-        CachedBlock get(int x, int y, int z) {
+        public void clear()        { map.clear(); }
+        public CachedBlock get(int x, int y, int z) {
             long key = ((long)(x & 0xFFF) << 20) | ((long)(z & 0xFFF) << 8) | (y & 0xFF);
             return map.computeIfAbsent(key, k -> new CachedBlock(x, y, z));
         }
     }
     public static final class CachedBlock {
-        final AABB[] colliders;   // null if empty
-        AABB waterBB;       // null if not water
-        final boolean isWeb, isBubbleDrag;
+        public final AABB[] colliders;   // null if empty
+        public AABB waterBB;       // null if not water
+        public final boolean isWeb, isBubbleDrag, bubbleDrag;
         CachedBlock(int bx, int by, int bz) {
             BlockState bs = world.getBlockState(new BlockPos(bx, by, bz));
             // ---- collision ----
@@ -191,7 +191,8 @@ public class DunderBotdlcClient implements ClientModInitializer {
                 waterBB = new AABB(bx, by, bz, bx + 1, top, bz + 1);
             } else waterBB = null;
             isWeb = bs.isOf(Blocks.COBWEB);
-            isBubbleDrag = bs.isOf(Blocks.BUBBLE_COLUMN) && bs.get(BubbleColumnBlock.DRAG);
+            isBubbleDrag = bs.isOf(Blocks.BUBBLE_COLUMN);
+            bubbleDrag = isBubbleDrag && bs.get(BubbleColumnBlock.DRAG);
         }
     }
     //
@@ -404,7 +405,7 @@ public class DunderBotdlcClient implements ClientModInitializer {
                 if (botMode == 0) {
                     DunderPvE.doPvE(this);
                 } else if (botMode == 1) {
-                    DunderJumpSprint.doJumpsprint(this, 3);
+                    DunderJumpSprint.doJumpsprint(this, 2);
                 } else if (botMode == 2) {
                     doAdjustTests();
                 } else if (botMode == 3) {
@@ -675,8 +676,9 @@ public jumpSprintState simulateAction(int depth, int index, int action, Vec3d ta
     double myScore = 25;
     //boolean[] barry = new boolean[stateBase.myControls.size()];
     //OptimizedSimInstance myState = new OptimizedSimInstance(new Vec3d(stateBase.x, stateBase.y, stateBase.z), new Vec3d(stateBase.velX, stateBase.velY, stateBase.velZ), (float)stateBase.yaw, stateBase.onGround, barry, world);
-
+    //System.out.println("hi");
     SimInstance myState = new SimInstance(stateBase.onGround, stateBase.myControls, new Vec3d(stateBase.x, stateBase.y, stateBase.z), new Vec3d(stateBase.velX, stateBase.velY, stateBase.velZ), (float)stateBase.yaw);
+    //stateStack[curStateStack] = stateBase.onGround, stateBase.myControls, stateBase.x, stateBase.y, stateBase.z, stateBase.velX, stateBase.velY, stateBase.velZ, (float)stateBase.yaw);
     for (int i = 0; i < 30; i++) {
         myState.simulatePlayer();
         myScore += 0.05;
@@ -786,16 +788,19 @@ public jumpSprintState simulateAction(int depth, int index, int action, Vec3d ta
                 localJumpSprintStates.add(pushDis);
             }
         }
-        /*for (int j = 0; j < 5; j++) {
+
+        if (depth >= 2) {
+        for (int j = 0; j < 5; j++) {
             SimInstance localMyState = myState.clone();
             localMyState.controljump = false;
-            localMyState.myControls.set(1, false);
+            localMyState.myControls[1] = false;
             localMyState.yaw = (float)(myState.yaw - (Math.PI / 2) + (Math.PI / 8) + ((Math.PI / 8) * new int[]{3,4,2,7,0}[j]));
             jumpSprintState pushDis = simulateAction(depth, bestPos2, 1, new Vec3d(0, 0, 0), localMyState);
             if (pushDis != null) {
                 localJumpSprintStates.add(pushDis);
             }
-        }*/
+        }
+        }
         /*for (int j = 0; j < 1; j++) {
           SimInstance localMyState = myState.clone();
           localMyState.controlleft = true;
